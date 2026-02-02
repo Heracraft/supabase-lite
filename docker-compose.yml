@@ -42,7 +42,7 @@ services:
       DEFAULT_PROJECT_NAME: ${STUDIO_DEFAULT_PROJECT}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
 
-      SUPABASE_URL: http://kong:8000
+      SUPABASE_URL: http://traefik:8000
       SUPABASE_PUBLIC_URL: ${SUPABASE_PUBLIC_URL}
       SUPABASE_ANON_KEY: ${ANON_KEY}
       SUPABASE_SERVICE_KEY: ${SERVICE_ROLE_KEY}
@@ -65,33 +65,37 @@ services:
       - ./volumes/snippets:/app/snippets:Z
       - ./volumes/functions:/app/edge-functions:Z
 
-  kong:
-    container_name: supabase-kong
-    image: kong:2.8.1
+  traefik:
+    container_name: supabase-traefik
+    image: traefik:v3.0
     restart: unless-stopped
     ports:
-      - ${KONG_HTTP_PORT}:8000/tcp
-      - ${KONG_HTTPS_PORT}:8443/tcp
+      - ${API_PORT}:8000/tcp
+      - ${API_HTTPS_PORT}:8443/tcp
     volumes:
-      # https://github.com/supabase/supabase/issues/12661
-      - ./volumes/api/kong.yml:/home/kong/temp.yml:ro,z
+      - ./volumes/api/traefik.yml:/etc/traefik/traefik.yml:ro,z
+      - ./volumes/api/traefik_dynamic.yml.template:/etc/traefik/dynamic_temp.yml:ro,z
     depends_on:
       analytics:
         condition: service_healthy
     environment:
-      KONG_DATABASE: "off"
-      KONG_DECLARATIVE_CONFIG: /home/kong/kong.yml
-      # https://github.com/supabase/cli/issues/14
-      KONG_DNS_ORDER: LAST,A,CNAME
-      KONG_PLUGINS: request-transformer,cors,key-auth,acl,basic-auth,request-termination,ip-restriction
-      KONG_NGINX_PROXY_PROXY_BUFFER_SIZE: 160k
-      KONG_NGINX_PROXY_PROXY_BUFFERS: 64 160k
       SUPABASE_ANON_KEY: ${ANON_KEY}
       SUPABASE_SERVICE_KEY: ${SERVICE_ROLE_KEY}
       DASHBOARD_USERNAME: ${DASHBOARD_USERNAME}
       DASHBOARD_PASSWORD: ${DASHBOARD_PASSWORD}
-    # https://unix.stackexchange.com/a/294837
-    entrypoint: bash -c 'eval "echo \"$$(cat ~/temp.yml)\"" > ~/kong.yml && /docker-entrypoint.sh kong docker-start'
+    user: root
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        apk add --no-cache apache2-utils
+        export DASHBOARD_PASSWORD_HASH=$$(htpasswd -nb $$DASHBOARD_USERNAME $$DASHBOARD_PASSWORD)
+        cat /etc/traefik/dynamic_temp.yml | sed "s|\$$SUPABASE_ANON_KEY|$$SUPABASE_ANON_KEY|g" | sed "s|\$$SUPABASE_SERVICE_KEY|$$SUPABASE_SERVICE_KEY|g" | sed "s|\$$DASHBOARD_USERNAME|$$DASHBOARD_USERNAME|g" | sed "s|\$$DASHBOARD_PASSWORD_HASH|$$DASHBOARD_PASSWORD_HASH|g" > /etc/traefik/dynamic.yml
+        traefik
+    networks:
+      default:
+        aliases:
+          - kong
 
   auth:
     container_name: supabase-auth
@@ -337,7 +341,7 @@ services:
         condition: service_healthy
     environment:
       JWT_SECRET: ${JWT_SECRET}
-      SUPABASE_URL: http://kong:8000
+      SUPABASE_URL: http://traefik:8000
       SUPABASE_ANON_KEY: ${ANON_KEY}
       SUPABASE_SERVICE_ROLE_KEY: ${SERVICE_ROLE_KEY}
       SUPABASE_DB_URL: postgresql://postgres:${POSTGRES_PASSWORD}@${POSTGRES_HOST}:${POSTGRES_PORT}/${POSTGRES_DB}

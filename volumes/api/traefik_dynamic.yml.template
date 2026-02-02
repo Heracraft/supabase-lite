@@ -1,0 +1,198 @@
+http:
+  middlewares:
+    cors:
+      headers:
+        accessControlAllowOriginList: 
+          - "*"
+        accessControlAllowHeaders:
+          - "*"
+        accessControlAllowMethods:
+          - "*"
+    
+    studio-auth:
+      basicAuth:
+        users:
+          - "$DASHBOARD_PASSWORD_HASH"
+    
+    strip-auth:
+      stripPrefix:
+        prefixes: ["/auth/v1"]
+    strip-rest:
+      stripPrefix:
+        prefixes: ["/rest/v1"]
+    strip-realtime:
+      stripPrefix:
+        prefixes: ["/realtime/v1"]
+    strip-realtime-api:
+      stripPrefix:
+        prefixes: ["/realtime/v1/api"]
+    strip-storage:
+      stripPrefix:
+        prefixes: ["/storage/v1"]
+    strip-functions:
+      stripPrefix:
+        prefixes: ["/functions/v1"]
+    strip-analytics:
+      stripPrefix:
+        prefixes: ["/analytics/v1"]
+    strip-meta:
+      stripPrefix:
+        prefixes: ["/pg"]
+    
+    graphql-headers:
+      headers:
+        customRequestHeaders:
+          Content-Profile: "graphql_public"
+    
+    replace-graphql:
+      replacePath:
+        path: "/rpc/graphql"
+
+  routers:
+    # Studio
+    studio:
+      rule: "PathPrefix(`/`)"
+      service: studio
+      middlewares:
+        - studio-auth
+      priority: 10
+    
+    # Auth - Open
+    auth-verify:
+      rule: "PathPrefix(`/auth/v1/verify`)"
+      service: auth
+      middlewares:
+        - strip-auth
+        - cors
+      priority: 30
+    auth-callback:
+      rule: "PathPrefix(`/auth/v1/callback`)"
+      service: auth
+      middlewares:
+        - strip-auth
+        - cors
+      priority: 30
+    auth-authorize:
+      rule: "PathPrefix(`/auth/v1/authorize`)"
+      service: auth
+      middlewares:
+        - strip-auth
+        - cors
+      priority: 30
+    
+    # Auth - Secure
+    auth-secure:
+      rule: "PathPrefix(`/auth/v1/`) && (Header(`apikey`, `$SUPABASE_ANON_KEY`) || Query(`apikey`, `$SUPABASE_ANON_KEY`) || Header(`Authorization`, `Bearer $SUPABASE_ANON_KEY`) || Header(`apikey`, `$SUPABASE_SERVICE_KEY`) || Query(`apikey`, `$SUPABASE_SERVICE_KEY`) || Header(`Authorization`, `Bearer $SUPABASE_SERVICE_KEY`))"
+      service: auth
+      middlewares:
+        - strip-auth
+        - cors
+      priority: 20
+    
+    # Rest
+    rest:
+      rule: "PathPrefix(`/rest/v1/`) && (Header(`apikey`, `$SUPABASE_ANON_KEY`) || Query(`apikey`, `$SUPABASE_ANON_KEY`) || Header(`Authorization`, `Bearer $SUPABASE_ANON_KEY`) || Header(`apikey`, `$SUPABASE_SERVICE_KEY`) || Query(`apikey`, `$SUPABASE_SERVICE_KEY`) || Header(`Authorization`, `Bearer $SUPABASE_SERVICE_KEY`))"
+      service: rest
+      middlewares:
+        - strip-rest
+        - cors
+    
+    # GraphQL
+    graphql:
+      rule: "PathPrefix(`/graphql/v1`) && (Header(`apikey`, `$SUPABASE_ANON_KEY`) || Query(`apikey`, `$SUPABASE_ANON_KEY`) || Header(`Authorization`, `Bearer $SUPABASE_ANON_KEY`) || Header(`apikey`, `$SUPABASE_SERVICE_KEY`) || Query(`apikey`, `$SUPABASE_SERVICE_KEY`) || Header(`Authorization`, `Bearer $SUPABASE_SERVICE_KEY`))"
+      service: graphql
+      middlewares:
+        - replace-graphql
+        - graphql-headers
+        - cors
+    
+    # Realtime API
+    realtime-api:
+      rule: "PathPrefix(`/realtime/v1/api`) && (Header(`apikey`, `$SUPABASE_ANON_KEY`) || Query(`apikey`, `$SUPABASE_ANON_KEY`) || Header(`Authorization`, `Bearer $SUPABASE_ANON_KEY`) || Header(`apikey`, `$SUPABASE_SERVICE_KEY`) || Query(`apikey`, `$SUPABASE_SERVICE_KEY`) || Header(`Authorization`, `Bearer $SUPABASE_SERVICE_KEY`))"
+      service: realtime-rest
+      middlewares:
+        # Check permissions: Kong uses 'realtime-v1-rest' with acl/key-auth
+        - strip-realtime-api
+        - cors
+      priority: 30
+
+    # Realtime WS
+    realtime-ws:
+      rule: "PathPrefix(`/realtime/v1/`) && (Header(`apikey`, `$SUPABASE_ANON_KEY`) || Query(`apikey`, `$SUPABASE_ANON_KEY`) || Header(`Authorization`, `Bearer $SUPABASE_ANON_KEY`) || Header(`apikey`, `$SUPABASE_SERVICE_KEY`) || Query(`apikey`, `$SUPABASE_SERVICE_KEY`) || Header(`Authorization`, `Bearer $SUPABASE_SERVICE_KEY`))"
+      service: realtime-ws
+      middlewares:
+        - strip-realtime
+        - cors
+      priority: 20
+    
+    # Storage
+    storage:
+      rule: "PathPrefix(`/storage/v1/`)"
+      service: storage
+      middlewares:
+        - strip-storage
+        - cors
+    
+    # Functions
+    functions:
+      rule: "PathPrefix(`/functions/v1/`)"
+      service: functions
+      middlewares:
+        - strip-functions
+        - cors
+
+    # Analytics
+    analytics:
+      rule: "PathPrefix(`/analytics/v1/`)"
+      service: analytics
+      middlewares:
+        - strip-analytics
+    
+    # Meta
+    meta:
+      rule: "PathPrefix(`/pg/`) && (Header(`apikey`, `$SUPABASE_SERVICE_KEY`) || Query(`apikey`, `$SUPABASE_SERVICE_KEY`) || Header(`Authorization`, `Bearer $SUPABASE_SERVICE_KEY`))"
+      service: meta
+      middlewares:
+        - strip-meta
+
+  services:
+    studio:
+      loadBalancer:
+        servers:
+          - url: "http://studio:3000"
+    auth:
+      loadBalancer:
+        servers:
+          - url: "http://auth:9999"
+    rest:
+      loadBalancer:
+        servers:
+          - url: "http://rest:3000"
+    graphql:
+      loadBalancer:
+        servers:
+          - url: "http://rest:3000"
+    realtime-ws:
+      loadBalancer:
+        servers:
+          - url: "http://realtime-dev.supabase-realtime:4000/socket"
+    realtime-rest:
+      loadBalancer:
+        servers:
+          - url: "http://realtime-dev.supabase-realtime:4000/api"
+    storage:
+      loadBalancer:
+        servers:
+          - url: "http://storage:5000"
+    functions:
+      loadBalancer:
+        servers:
+          - url: "http://functions:9000"
+    analytics:
+      loadBalancer:
+        servers:
+          - url: "http://analytics:4000"
+    meta:
+      loadBalancer:
+        servers:
+          - url: "http://meta:8080"
