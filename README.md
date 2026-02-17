@@ -1,3 +1,18 @@
+### Goals
+- Cut down idle Memory and CPU usage. Especially Memory
+- Remove http basic auth by requirign an OIDC middleware. This is injected into the template.
+- Setup supavisor by default. Refer to https://github.com/coollabsio/coolify/discussions/6341. Perhaps a url link to supavisor port if the user wants. 
+- replace kong with coolify's traefik?
+
+**Savings**
+Compute savings when idle
+- supabase-kong: ~ 748 MB, 0.816%
+- supabase-analytics: ~ 358 MB, 9.70% CPU 
+- realtime-dev: ~ 200 MB, 0.858%
+- imgproxy: ~ MB, 1.17%, 1.17%
+
+---
+
 # Self-Hosted Supabase with Docker
 
 This is the official Docker Compose setup for self-hosted Supabase. It provides a complete stack with all Supabase services running locally or on your infrastructure.
