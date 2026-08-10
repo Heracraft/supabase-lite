@@ -17,6 +17,30 @@ entryPoints:
     address: ":8000"
   websecure:
     address: ":8443"
+  # Scraped by Prometheus over the observability network. Deliberately not
+  # published to the host.
+  metrics:
+    address: ":8082"
+
+# Traefik fronts every Supabase service, so its per-router request rate,
+# latency and status-code series cover the whole stack without instrumenting
+# any Supabase container. This is most of what Studio's Reports tab showed
+# before analytics was removed.
+metrics:
+  prometheus:
+    entryPoint: metrics
+    addEntryPointsLabels: true
+    addRoutersLabels: true
+    addServicesLabels: true
+
+# JSON so log shippers do not have to parse a bespoke text format.
+accessLog:
+  format: json
+  fields:
+    headers:
+      defaultMode: drop
+      names:
+        User-Agent: keep
 
 # Fragments in volumes/api/dynamic/ are merged into one dynamic config, so
 # optional pieces drop in or out as whole files. A directory mount also makes
