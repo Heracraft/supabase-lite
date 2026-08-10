@@ -1,102 +1,126 @@
-### Goals
-- Cut down idle Memory and CPU usage. Especially Memory
-- Remove http basic auth by requirign an OIDC middleware. This is injected into the template.
-- Setup supavisor by default. Refer to https://github.com/coollabsio/coolify/discussions/6341. Perhaps a url link to supavisor port if the user wants. 
-- replace kong with coolify's traefik?
+# Self-Hosted Supabase, trimmed
 
-**Savings**
-Compute savings when idle
-- supabase-kong: ~ 748 MB, 0.816%
-- supabase-analytics: ~ 358 MB, 9.70% CPU 
-- realtime-dev: ~ 200 MB, 0.858%
-- imgproxy: ~ MB, 1.17%, 1.17%
+A fork of Supabase's official [Docker self-hosting
+setup](https://supabase.com/docs/guides/self-hosting/docker), cut down for
+smaller servers and wired into an existing observability stack.
 
----
+Three differences from upstream:
 
-# Self-Hosted Supabase with Docker
+1. **Traefik instead of Kong** as the API gateway.
+2. **Studio behind OIDC** instead of HTTP basic auth.
+3. **Logs and metrics to Loki and Prometheus**, with Logflare removed.
 
-This is the official Docker Compose setup for self-hosted Supabase. It provides a complete stack with all Supabase services running locally or on your infrastructure.
+Everything else tracks upstream. See [docs/upgrading.md](docs/upgrading.md) for
+how the fork stays in sync.
 
-## Getting Started
+## Quickstart
 
-Follow the detailed setup guide in our documentation: [Self-Hosting with Docker](https://supabase.com/docs/guides/self-hosting/docker)
+```sh
+cp .env.example .env
+./utils/generate-keys.sh          # writes secrets into .env
+./utils/generate-htpasswd.sh      # dashboard password file
+docker network create observability
+docker compose up -d
+```
 
-The guide covers:
-- Prerequisites (Git and Docker)
-- Initial setup and configuration
-- Securing your installation
-- Accessing services
-- Updating your instance
+Studio is on `${KONG_HTTP_PORT}` (8000 by default), behind basic auth using
+`DASHBOARD_USERNAME` and `DASHBOARD_PASSWORD`. To put it behind your identity
+provider instead, see [docs/oidc.md](docs/oidc.md).
 
-## What's Included
+The `observability` network must exist before the stack starts, because the
+compose file declares it `external`. If your LGTM stack already owns a network,
+point `OBSERVABILITY_NETWORK` at it instead.
 
-This Docker Compose configuration includes the following services:
+## What was removed
 
-- **[Studio](https://github.com/supabase/supabase/tree/master/apps/studio)** - A dashboard for managing your self-hosted Supabase project
-- **[Kong](https://github.com/Kong/kong)** - Kong API gateway
-- **[Auth](https://github.com/supabase/auth)** - JWT-based authentication API for user sign-ups, logins, and session management
-- **[PostgREST](https://github.com/PostgREST/postgrest)** - Web server that turns your PostgreSQL database directly into a RESTful API
-- **[Realtime](https://github.com/supabase/realtime)** - Elixir server that listens to PostgreSQL database changes and broadcasts them over websockets
-- **[Storage](https://github.com/supabase/storage)** - RESTful API for managing files in S3, with Postgres handling permissions
-- **[imgproxy](https://github.com/imgproxy/imgproxy)** - Fast and secure image processing server
-- **[postgres-meta](https://github.com/supabase/postgres-meta)** - RESTful API for managing Postgres (fetch tables, add roles, run queries)
-- **[PostgreSQL](https://github.com/supabase/postgres)** - Object-relational database with over 30 years of active development
-- **[Edge Runtime](https://github.com/supabase/edge-runtime)** - Web server based on Deno runtime for running JavaScript, TypeScript, and WASM services
-- **[Logflare](https://github.com/Logflare/logflare)** - Log management and event analytics platform
-- **[Vector](https://github.com/vectordotdev/vector)** - High-performance observability data pipeline for logs
-- **[Supavisor](https://github.com/supabase/supavisor)** - Supabase's Postgres connection pooler
+| Service | Why |
+|---|---|
+| `analytics` (Logflare) | Heaviest idle service. Logs go to Loki now |
+| `kong` | Replaced by Traefik |
+
+Logflare was the real saving. It is an Elixir application holding a `_analytics`
+schema, and nearly every service in the stack waited on its health check at
+startup.
+
+**On the Kong figure.** An earlier version of this README credited the gateway
+swap with ~748MB. That number is not typical for Kong, which defaults to
+`nginx_worker_processes: auto`, one worker per core, so it scales with the
+machine rather than the workload. Setting that to `1` would have recovered most
+of it without replacing the gateway. Traefik still earns its place here, for the
+OIDC middleware and the free per-route metrics, but not for that number.
+
+Idle figures for this fork have not been measured on the current configuration.
+Anything quoted here would be a guess, so nothing is quoted.
+
+## What you give up
+
+Studio's **Logs Explorer** and **Reports** tabs stop working. They query
+Logflare in its own SQL dialect over `/analytics/v1`, and Grafana does not
+provide that, so they are switched off rather than left throwing errors.
+
+The **`/pg/` route to postgres-meta** is gone. postgres-meta does no
+authentication of its own and its `/query` endpoint runs arbitrary SQL as a
+privileged role, so it should never have been reachable behind a gateway check
+weaker than Kong's literal key match. Studio still reaches it directly over the
+compose network. See [docs/gateway.md](docs/gateway.md) if you need it back for
+the Management API.
 
 ## Documentation
 
-- **[Documentation](https://supabase.com/docs/guides/self-hosting/docker)** - Setup and configuration guides
-- **[CHANGELOG.md](./CHANGELOG.md)** - Track recent updates and changes to services
-- **[versions.md](./versions.md)** - Complete history of Docker image versions for rollback reference
+| | |
+|---|---|
+| [docs/gateway.md](docs/gateway.md) | Traefik layout, Kong route translation, how requests are gated, adding a route |
+| [docs/oidc.md](docs/oidc.md) | Putting Studio behind an identity provider, and back |
+| [docs/observability.md](docs/observability.md) | Loki and Prometheus wiring, scrape targets, LogQL and PromQL to start from |
+| [docs/upgrading.md](docs/upgrading.md) | Merging upstream changes into the fork |
+| [CHANGELOG.md](CHANGELOG.md) | Upstream service changes |
+| [versions.md](versions.md) | Upstream image history |
 
-## Updates
+## Services
 
-To update your self-hosted Supabase instance:
+- **[Studio](https://github.com/supabase/supabase/tree/master/apps/studio)** dashboard
+- **[Traefik](https://traefik.io/traefik/)** API gateway
+- **[Auth](https://github.com/supabase/auth)** JWT authentication
+- **[PostgREST](https://github.com/PostgREST/postgrest)** REST API over Postgres
+- **[Realtime](https://github.com/supabase/realtime)** database change broadcasting
+- **[Storage](https://github.com/supabase/storage)** S3-compatible file API
+- **[imgproxy](https://github.com/imgproxy/imgproxy)** image transformation
+- **[postgres-meta](https://github.com/supabase/postgres-meta)** database management API
+- **[PostgreSQL](https://github.com/supabase/postgres)** the database
+- **[Edge Runtime](https://github.com/supabase/edge-runtime)** Deno functions
+- **[Vector](https://github.com/vectordotdev/vector)** log shipping, to Loki
+- **[Supavisor](https://github.com/supabase/supavisor)** connection pooler
+- **[oauth2-proxy](https://github.com/oauth2-proxy/oauth2-proxy)** OIDC for Studio, optional
 
-1. Review [CHANGELOG.md](./CHANGELOG.md) for breaking changes
-2. Check [versions.md](./versions.md) for new image versions
-3. Update `docker-compose.yml` if there are configuration changes
-4. Pull the latest images: `docker compose pull`
-5. Stop services: `docker compose down`
-6. Start services with new configuration: `docker compose up -d`
+## Security
 
-**Note:** Consider to always backup your database before updating.
+The default configuration is not production-ready. Before deploying:
 
-## Community & Support
+- Run `./utils/generate-keys.sh` and never ship the example values
+- Terminate TLS in front of the stack, then set `OIDC_COOKIE_SECURE=true`
+- Put Studio behind OIDC and restrict it by group, not just email domain
+- Keep `api.insecure` off in `volumes/api/traefik.yml`; it exposes an
+  unauthenticated endpoint that renders router configuration
+- Review the gating trade-off in [docs/gateway.md](docs/gateway.md): the gateway
+  checks that a credential is present, not that it is valid, and leaves
+  validation to each service
+- Set up backups
 
-For troubleshooting common issues, see:
-- [GitHub Discussions](https://github.com/orgs/supabase/discussions?discussions_q=is%3Aopen+label%3Aself-hosted) - Questions, feature requests, and workarounds
-- [GitHub Issues](https://github.com/supabase/supabase/issues?q=is%3Aissue%20state%3Aopen%20label%3Aself-hosted) - Known issues
-- [Documentation](https://supabase.com/docs/guides/self-hosting) - Setup and configuration guides
+## Updating
 
-Self-hosted Supabase is community-supported. Get help and connect with other users:
+1. Read [CHANGELOG.md](CHANGELOG.md) for breaking changes
+2. Check [versions.md](versions.md) for new image versions
+3. Follow [docs/upgrading.md](docs/upgrading.md) to merge upstream
+4. `docker compose pull && docker compose up -d`
 
-- [Discord](https://discord.supabase.com) - Real-time chat and community support
-- [Reddit](https://www.reddit.com/r/Supabase/) - Official Supabase subreddit
+Back up the database first.
 
-Share your self-hosting experience:
+## Support
 
-- [GitHub Discussions](https://github.com/orgs/supabase/discussions/39820) - "Self-hosting: What's working (and what's not)?"
+Self-hosted Supabase is community-supported.
 
-## Important Notes
+- [GitHub Discussions](https://github.com/orgs/supabase/discussions?discussions_q=is%3Aopen+label%3Aself-hosted)
+- [GitHub Issues](https://github.com/supabase/supabase/issues?q=is%3Aissue%20state%3Aopen%20label%3Aself-hosted)
+- [Discord](https://discord.supabase.com)
 
-### Security
-
-⚠️ **The default configuration is not secure for production use.**
-
-Before deploying to production, you must:
-- Update all default passwords and secrets in the `.env` file
-- Generate new JWT secrets
-- Review and update CORS settings
-- Consider setting up a secure proxy in front of self-hosted Supabase
-- Review and adjust network security configuration (ACLs, etc.)
-- Set up proper backup procedures
-
-See the [security section](https://supabase.com/docs/guides/self-hosting/docker#configuring-and-securing-supabase) in the documentation.
-
-## License
-
-This repository is licensed under the Apache 2.0 License. See the main [Supabase repository](https://github.com/supabase/supabase) for details.
+Changes specific to this fork are not upstream's problem. Raise those here.
