@@ -435,7 +435,7 @@ services:
       DB_PORT: ${POSTGRES_PORT}
       DB_PASSWORD: ${POSTGRES_PASSWORD}
       DB_SCHEMA: _analytics
-      LOGFLARE_PUBLIC_ACCESS_TOKEN: ${LOGFLARE_PUBLIC_ACCESS_TOKEN}
+      LOKI_ENDPOINT: ${LOKI_ENDPOINT:-http://loki:3100}
       LOGFLARE_PRIVATE_ACCESS_TOKEN: ${LOGFLARE_PRIVATE_ACCESS_TOKEN}
       LOGFLARE_SINGLE_TENANT: true
       LOGFLARE_SUPABASE_MODE: true
@@ -542,7 +542,7 @@ services:
       interval: 5s
       retries: 3
     environment:
-      LOGFLARE_PUBLIC_ACCESS_TOKEN: ${LOGFLARE_PUBLIC_ACCESS_TOKEN}
+      LOKI_ENDPOINT: ${LOKI_ENDPOINT:-http://loki:3100}
     command:
       [
         "--config",
