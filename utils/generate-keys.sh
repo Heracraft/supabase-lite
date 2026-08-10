@@ -60,6 +60,11 @@ logflare_private_access_token=$(gen_base64 24)
 s3_protocol_access_key_id=$(gen_hex 16)
 s3_protocol_access_key_secret=$(gen_hex 32)
 
+# oauth2-proxy requires exactly 16, 24 or 32 bytes before encoding, and the
+# value lands in a cookie, so use the URL-safe alphabet. Padding is kept;
+# base64_url_encode() strips it, which oauth2-proxy will not accept.
+oidc_cookie_secret=$(gen_base64 32 | tr '+/' '-_')
+
 echo ""
 echo "JWT_SECRET=${jwt_secret}"
 echo ""
@@ -75,6 +80,7 @@ echo "LOGFLARE_PUBLIC_ACCESS_TOKEN=${logflare_public_access_token}"
 echo "LOGFLARE_PRIVATE_ACCESS_TOKEN=${logflare_private_access_token}"
 echo "S3_PROTOCOL_ACCESS_KEY_ID=${s3_protocol_access_key_id}"
 echo "S3_PROTOCOL_ACCESS_KEY_SECRET=${s3_protocol_access_key_secret}"
+echo "OIDC_COOKIE_SECRET=${oidc_cookie_secret}"
 echo ""
 
 postgres_password=$(gen_hex 16)
@@ -114,6 +120,7 @@ sed \
     -e "s|^LOGFLARE_PRIVATE_ACCESS_TOKEN=.*$|LOGFLARE_PRIVATE_ACCESS_TOKEN=${logflare_private_access_token}|" \
     -e "s|^S3_PROTOCOL_ACCESS_KEY_ID=.*$|S3_PROTOCOL_ACCESS_KEY_ID=${s3_protocol_access_key_id}|" \
     -e "s|^S3_PROTOCOL_ACCESS_KEY_SECRET=.*$|S3_PROTOCOL_ACCESS_KEY_SECRET=${s3_protocol_access_key_secret}|" \
+    -e "s|^OIDC_COOKIE_SECRET=.*$|OIDC_COOKIE_SECRET=${oidc_cookie_secret}|" \
     -e "s|^POSTGRES_PASSWORD=.*$|POSTGRES_PASSWORD=${postgres_password}|" \
     -e "s|^DASHBOARD_PASSWORD=.*$|DASHBOARD_PASSWORD=${dashboard_password}|" \
     .env

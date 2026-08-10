@@ -85,6 +85,48 @@ services:
         aliases:
           - kong
 
+  # Puts Studio behind an OIDC provider instead of HTTP basic auth.
+  #
+  # Off unless the profile is requested, so a stack without an IdP configured
+  # still boots:
+  #   cp volumes/api/optional/30-auth.yml volumes/api/dynamic/
+  #   docker compose --profile oidc up -d
+  #
+  # See docs/oidc.md.
+  oauth2-proxy:
+    container_name: supabase-oauth2-proxy
+    image: quay.io/oauth2-proxy/oauth2-proxy:v7.7.1
+    profiles: ["oidc"]
+    restart: unless-stopped
+    depends_on:
+      studio:
+        condition: service_healthy
+    environment:
+      OAUTH2_PROXY_HTTP_ADDRESS: "0.0.0.0:4180"
+      OAUTH2_PROXY_PROVIDER: oidc
+      OAUTH2_PROXY_OIDC_ISSUER_URL: ${OIDC_ISSUER_URL}
+      OAUTH2_PROXY_CLIENT_ID: ${OIDC_CLIENT_ID}
+      OAUTH2_PROXY_CLIENT_SECRET: ${OIDC_CLIENT_SECRET}
+      OAUTH2_PROXY_COOKIE_SECRET: ${OIDC_COOKIE_SECRET}
+      OAUTH2_PROXY_REDIRECT_URL: ${SUPABASE_PUBLIC_URL}/oauth2/callback
+
+      # Studio has no user model of its own, so everything the proxy admits
+      # gets full dashboard access. Restrict with one of these; the default
+      # below admits nobody until it is set.
+      OAUTH2_PROXY_EMAIL_DOMAINS: ${OIDC_ALLOWED_EMAIL_DOMAINS:-}
+      OAUTH2_PROXY_ALLOWED_GROUPS: ${OIDC_ALLOWED_GROUPS:-}
+
+      # Studio is the only thing behind the proxy.
+      OAUTH2_PROXY_UPSTREAMS: http://studio:3000
+      # Traefik terminates the client connection, so trust its forwarded
+      # headers when building the redirect URL.
+      OAUTH2_PROXY_REVERSE_PROXY: "true"
+      # One provider, so skip the interstitial "sign in with" button.
+      OAUTH2_PROXY_SKIP_PROVIDER_BUTTON: "true"
+      # Set to true once SUPABASE_PUBLIC_URL is https, which it must be in
+      # production: the session cookie is a full dashboard credential.
+      OAUTH2_PROXY_COOKIE_SECURE: ${OIDC_COOKIE_SECURE:-false}
+
   auth:
     container_name: supabase-auth
     image: supabase/gotrue:v2.185.0

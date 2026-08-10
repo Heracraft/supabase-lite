@@ -1,0 +1,43 @@
+# Puts Studio behind OIDC instead of HTTP basic auth.
+#
+# Enable:
+#   cp volumes/api/optional/30-auth.yml volumes/api/dynamic/
+#   docker compose --profile oidc up -d
+#
+# Disable:
+#   rm volumes/api/dynamic/30-auth.yml
+#   docker compose stop oauth2-proxy
+#
+# Basic auth comes back on its own when this file is gone, because the
+# studio router in 20-routers.yml is still there underneath.
+#
+# This fragment is additive rather than an override. Two files in the same
+# provider directory defining the same router key conflict, and which one wins
+# is not defined. Instead studio-oidc carries priority 2 against the plain
+# studio router's priority 1, matching the same paths and shadowing it. See
+# docs/oidc.md.
+
+http:
+  routers:
+    studio-oidc:
+      rule: >-
+        PathPrefix(`/`)
+        && !PathPrefix(`/rest/v1/`)
+        && !PathPrefix(`/auth/v1/`)
+        && !PathPrefix(`/realtime/v1/`)
+        && !PathPrefix(`/storage/v1/`)
+        && !PathPrefix(`/functions/v1/`)
+        && !PathPrefix(`/graphql/v1`)
+        && !PathPrefix(`/analytics/v1/`)
+      service: oauth2-proxy
+      priority: 2
+
+  services:
+    # oauth2-proxy proxies to Studio itself via --upstream, and serves its own
+    # /oauth2/* endpoints on the same listener. Routing the whole prefix here
+    # means the sign-in redirect works without a second router or a forwardAuth
+    # middleware, which would return a bare 401 instead of redirecting.
+    oauth2-proxy:
+      loadBalancer:
+        servers:
+          - url: "http://oauth2-proxy:4180"
