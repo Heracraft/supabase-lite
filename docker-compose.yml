@@ -74,24 +74,12 @@ services:
       - ${KONG_HTTPS_PORT}:8443/tcp
     volumes:
       - ./volumes/api/traefik.yml:/etc/traefik/traefik.yml:ro,z
-      - ./volumes/api/traefik_dynamic.yml.template:/etc/traefik/dynamic_temp.yml:ro,z
+      - ./volumes/api/traefik_dynamic.yml:/etc/traefik/dynamic.yml:ro,z
+      # Generate with ./utils/generate-htpasswd.sh
+      - ./volumes/api/htpasswd:/etc/traefik/htpasswd:ro,z
     depends_on:
       analytics:
         condition: service_healthy
-    environment:
-      SUPABASE_ANON_KEY: ${ANON_KEY}
-      SUPABASE_SERVICE_KEY: ${SERVICE_ROLE_KEY}
-      DASHBOARD_USERNAME: ${DASHBOARD_USERNAME}
-      DASHBOARD_PASSWORD: ${DASHBOARD_PASSWORD}
-    user: root
-    entrypoint:
-      - /bin/sh
-      - -c
-      - |
-        apk add --no-cache apache2-utils
-        export DASHBOARD_PASSWORD_HASH=$$(htpasswd -nb $$DASHBOARD_USERNAME $$DASHBOARD_PASSWORD)
-        cat /etc/traefik/dynamic_temp.yml | sed "s|\$$SUPABASE_ANON_KEY|$$SUPABASE_ANON_KEY|g" | sed "s|\$$SUPABASE_SERVICE_KEY|$$SUPABASE_SERVICE_KEY|g" | sed "s|\$$DASHBOARD_USERNAME|$$DASHBOARD_USERNAME|g" | sed "s|\$$DASHBOARD_PASSWORD_HASH|$$DASHBOARD_PASSWORD_HASH|g" > /etc/traefik/dynamic.yml
-        traefik
     networks:
       default:
         aliases:
