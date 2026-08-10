@@ -74,7 +74,7 @@ services:
       - ${KONG_HTTPS_PORT}:8443/tcp
     volumes:
       - ./volumes/api/traefik.yml:/etc/traefik/traefik.yml:ro,z
-      - ./volumes/api/traefik_dynamic.yml:/etc/traefik/dynamic.yml:ro,z
+      - ./volumes/api/dynamic:/etc/traefik/dynamic:ro,z
       # Generate with ./utils/generate-htpasswd.sh
       - ./volumes/api/htpasswd:/etc/traefik/htpasswd:ro,z
     depends_on:

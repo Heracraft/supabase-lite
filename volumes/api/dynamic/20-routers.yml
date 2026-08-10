@@ -1,75 +1,24 @@
-# Traefik dynamic configuration.
+# Routers.
 #
-# This file contains no secrets and needs no substitution at boot. The gateway
-# checks only that a credential is PRESENT; it never compares the value.
-# PostgREST (PGRST_JWT_SECRET), GoTrue, Storage and Realtime each validate the
-# JWT themselves, so value matching at the gateway added no security while
-# putting the service_role key into config that Traefik's API renders back out.
+# The gateway checks only that a credential is PRESENT; it never compares the
+# value. PostgREST (PGRST_JWT_SECRET), GoTrue, Storage and Realtime each
+# validate the JWT themselves, so value matching here added no security while
+# putting the service_role key into config the Traefik API renders back out.
 #
 # Every gated router also admits Method(`OPTIONS`). Without it a browser CORS
-# preflight, which carries no apikey header, matches no router and falls
-# through to the studio catch-all, breaking every cross-origin client.
+# preflight, which carries no apikey header, matches no router at all.
+#
+# Priorities are explicit everywhere. Traefik's default priority is the rule
+# string's length, which reshuffles silently whenever a rule is edited.
+#
+#   100  specific sub-paths that must beat their own prefix
+#    90  prefixes shadowed by a 100-level route
+#    80  ordinary service prefixes
+#     1  studio catch-all, always last
 
 http:
-  middlewares:
-    cors:
-      headers:
-        accessControlAllowOriginList:
-          - "*"
-        accessControlAllowHeaders:
-          - "*"
-        accessControlAllowMethods:
-          - "*"
-        accessControlMaxAge: 3600
-        addVaryHeader: true
-
-    # Generate with: ./utils/generate-htpasswd.sh
-    # Replaced by OIDC when volumes/api/dynamic/30-auth.yml is in place.
-    studio-auth:
-      basicAuth:
-        usersFile: "/etc/traefik/htpasswd"
-
-    strip-auth:
-      stripPrefix:
-        prefixes: ["/auth/v1"]
-    strip-rest:
-      stripPrefix:
-        prefixes: ["/rest/v1"]
-    strip-realtime:
-      stripPrefix:
-        prefixes: ["/realtime/v1"]
-    strip-realtime-api:
-      stripPrefix:
-        prefixes: ["/realtime/v1/api"]
-    strip-storage:
-      stripPrefix:
-        prefixes: ["/storage/v1"]
-    strip-functions:
-      stripPrefix:
-        prefixes: ["/functions/v1"]
-    strip-analytics:
-      stripPrefix:
-        prefixes: ["/analytics/v1"]
-
-    graphql-headers:
-      headers:
-        customRequestHeaders:
-          Content-Profile: "graphql_public"
-
-    replace-graphql:
-      replacePath:
-        path: "/rpc/graphql"
-
-  # Priorities are explicit everywhere. Traefik's default priority is the rule
-  # string's length, which silently reshuffles whenever a rule is edited.
-  #
-  #   100  specific sub-paths that must beat their own prefix
-  #    90  prefixes shadowed by a 100-level route
-  #    80  ordinary service prefixes
-  #     1  studio catch-all, always last
   routers:
-    # Auth: open endpoints. No credential required; GoTrue validates the
-    # token in the URL for these flows.
+    # Auth: open endpoints. GoTrue validates the token carried in the URL.
     auth-verify:
       rule: "PathPrefix(`/auth/v1/verify`)"
       service: auth
@@ -117,8 +66,8 @@ http:
       middlewares: [strip-realtime, cors]
       priority: 90
 
-    # Storage and Functions are ungated at the gateway, matching Kong's
-    # behaviour. Both validate the JWT themselves.
+    # Storage and Functions are ungated here, matching Kong's behaviour. Both
+    # validate the JWT themselves.
     storage:
       rule: "PathPrefix(`/storage/v1/`)"
       service: storage
@@ -145,14 +94,16 @@ http:
     # substitute. Studio does not need the route either, it reaches the service
     # directly over the compose network via STUDIO_PG_META_URL.
     #
-    # See docs/gateway.md before re-adding it for Management API use.
+    # See docs/gateway.md before re-adding it.
 
     # Studio is a SPA and needs the root prefix, but it must not swallow the
-    # API namespaces. Without these exclusions a request to /rest/v1/ that
-    # carries no credential falls through to here and answers with
+    # API namespaces. Without these exclusions a request to /rest/v1/ carrying
+    # no credential falls through to here and answers with
     # `WWW-Authenticate: Basic`, which pops a login dialog in the browser and
     # advertises how the dashboard is protected. Excluded, the same request
     # matches no router and Traefik returns a plain 404.
+    #
+    # 30-auth.yml overrides this router to route through oauth2-proxy.
     studio:
       rule: >-
         PathPrefix(`/`)
@@ -166,41 +117,3 @@ http:
       service: studio
       middlewares: [studio-auth]
       priority: 1
-
-  services:
-    studio:
-      loadBalancer:
-        servers:
-          - url: "http://studio:3000"
-    auth:
-      loadBalancer:
-        servers:
-          - url: "http://auth:9999"
-    rest:
-      loadBalancer:
-        servers:
-          - url: "http://rest:3000"
-    graphql:
-      loadBalancer:
-        servers:
-          - url: "http://rest:3000"
-    realtime-ws:
-      loadBalancer:
-        servers:
-          - url: "http://realtime-dev.supabase-realtime:4000/socket"
-    realtime-rest:
-      loadBalancer:
-        servers:
-          - url: "http://realtime-dev.supabase-realtime:4000/api"
-    storage:
-      loadBalancer:
-        servers:
-          - url: "http://storage:5000"
-    functions:
-      loadBalancer:
-        servers:
-          - url: "http://functions:9000"
-    analytics:
-      loadBalancer:
-        servers:
-          - url: "http://analytics:4000"

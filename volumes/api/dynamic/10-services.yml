@@ -1,0 +1,42 @@
+# Backend services. Hostnames are compose service names on the default network.
+
+http:
+  services:
+    studio:
+      loadBalancer:
+        servers:
+          - url: "http://studio:3000"
+    auth:
+      loadBalancer:
+        servers:
+          - url: "http://auth:9999"
+    rest:
+      loadBalancer:
+        servers:
+          - url: "http://rest:3000"
+    # GraphQL is PostgREST with a rewritten path and a schema header applied by
+    # the replace-graphql and graphql-headers middlewares.
+    graphql:
+      loadBalancer:
+        servers:
+          - url: "http://rest:3000"
+    realtime-ws:
+      loadBalancer:
+        servers:
+          - url: "http://realtime-dev.supabase-realtime:4000/socket"
+    realtime-rest:
+      loadBalancer:
+        servers:
+          - url: "http://realtime-dev.supabase-realtime:4000/api"
+    storage:
+      loadBalancer:
+        servers:
+          - url: "http://storage:5000"
+    functions:
+      loadBalancer:
+        servers:
+          - url: "http://functions:9000"
+    analytics:
+      loadBalancer:
+        servers:
+          - url: "http://analytics:4000"

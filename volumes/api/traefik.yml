@@ -18,9 +18,13 @@ entryPoints:
   websecure:
     address: ":8443"
 
+# Fragments in volumes/api/dynamic/ are merged into one dynamic config, so
+# optional pieces drop in or out as whole files. A directory mount also makes
+# `watch` work: bind-mounting a single file pins the container to that inode,
+# and editors that write-and-rename leave the container reading the old one.
 providers:
   file:
-    filename: "/etc/traefik/dynamic.yml"
+    directory: "/etc/traefik/dynamic"
     watch: true
 
 log:
