@@ -1,6 +1,16 @@
+# The API and dashboard are off.
+#
+# `insecure: true` served the dashboard and /api/rawdata unauthenticated on
+# :8080 to every container on the compose network, including `functions`, which
+# runs user-supplied Deno code. /api/rawdata renders router rules verbatim, so
+# while the rules held literal keys it also handed out the service_role key.
+#
+# To inspect routers during development, override it for one run without
+# editing this file:
+#   docker compose run --rm --service-ports traefik --api.insecure=true
 api:
-  dashboard: true
-  insecure: true
+  dashboard: false
+  insecure: false
 
 entryPoints:
   web:
