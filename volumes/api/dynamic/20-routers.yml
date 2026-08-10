@@ -80,12 +80,6 @@ http:
       middlewares: [strip-functions, cors]
       priority: 80
 
-    analytics:
-      rule: "PathPrefix(`/analytics/v1/`)"
-      service: analytics
-      middlewares: [strip-analytics]
-      priority: 80
-
     # NOTE: there is deliberately no /pg/ route to postgres-meta.
     #
     # postgres-meta performs no authentication of its own and its /query
@@ -102,6 +96,10 @@ http:
     # `WWW-Authenticate: Basic`, which pops a login dialog in the browser and
     # advertises how the dashboard is protected. Excluded, the same request
     # matches no router and Traefik returns a plain 404.
+    #
+    # /analytics/v1/ stays excluded even though nothing serves it now. It is
+    # still an API namespace, and a leftover client should get a clean 404
+    # rather than a basic-auth dialog from the dashboard.
     #
     # 30-auth.yml overrides this router to route through oauth2-proxy.
     studio:

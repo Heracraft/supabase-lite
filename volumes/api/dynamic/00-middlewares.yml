@@ -42,9 +42,6 @@ http:
     strip-functions:
       stripPrefix:
         prefixes: ["/functions/v1"]
-    strip-analytics:
-      stripPrefix:
-        prefixes: ["/analytics/v1"]
 
     graphql-headers:
       headers:

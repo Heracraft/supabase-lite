@@ -36,7 +36,3 @@ http:
       loadBalancer:
         servers:
           - url: "http://functions:9000"
-    analytics:
-      loadBalancer:
-        servers:
-          - url: "http://analytics:4000"
