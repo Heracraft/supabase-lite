@@ -84,6 +84,7 @@ services:
       default:
         aliases:
           - kong
+      observability:
 
   # Puts Studio behind an OIDC provider instead of HTTP basic auth.
   #
@@ -210,6 +211,11 @@ services:
       # GOTRUE_HOOK_SEND_EMAIL_URI: "http://host.docker.internal:54321/functions/v1/email_sender"
       # GOTRUE_HOOK_SEND_EMAIL_SECRETS: "v1,whsec_VGhpcyBpcyBhbiBleGFtcGxlIG9mIGEgc2hvcnRlciBCYXNlNjQgc3RyaW5n"
 
+      # Prometheus exporter on :9100, plus Go runtime metrics.
+      GOTRUE_METRICS_ENABLED: "true"
+      GOTRUE_METRICS_EXPORTER: prometheus
+    networks: [default, observability]
+
   rest:
     container_name: supabase-rest
     image: postgrest/postgrest:v14.3
@@ -228,10 +234,14 @@ services:
       PGRST_DB_USE_LEGACY_GUCS: "false"
       PGRST_APP_SETTINGS_JWT_SECRET: ${JWT_SECRET}
       PGRST_APP_SETTINGS_JWT_EXP: ${JWT_EXPIRY}
+      # Serves /metrics, /live and /ready. Unauthenticated, so it stays on the
+      # observability network and is never routed through the gateway.
+      PGRST_ADMIN_SERVER_PORT: 3001
     command:
       [
         "postgrest"
       ]
+    networks: [default, observability]
 
   realtime:
     # This container name looks inconsistent but is correct because realtime constructs tenant id by parsing the subdomain
@@ -272,6 +282,9 @@ services:
       SEED_SELF_HOST: "true"
       RUN_JANITOR: "true"
       DISABLE_HEALTHCHECK_LOGGING: "true"
+    # /metrics on :4000, gated by a JWT signed with METRICS_JWT_SECRET (already
+    # JWT_SECRET below). Scrape with a bearer token; see docs/observability.md.
+    networks: [default, observability]
 
   # To use S3 backed storage: docker compose -f docker-compose.yml -f docker-compose.s3.yml up
   storage:
@@ -317,6 +330,8 @@ services:
       GLOBAL_S3_BUCKET: stub
       ENABLE_IMAGE_TRANSFORMATION: "true"
       IMGPROXY_URL: http://imgproxy:5001
+    # Serves /metrics on :5000 alongside the API.
+    networks: [default, observability]
 
   imgproxy:
     container_name: supabase-imgproxy
@@ -340,6 +355,8 @@ services:
       IMGPROXY_USE_ETAG: "true"
       IMGPROXY_ENABLE_WEBP_DETECTION: ${IMGPROXY_ENABLE_WEBP_DETECTION}
       IMGPROXY_MAX_SRC_RESOLUTION: 16.8
+      IMGPROXY_PROMETHEUS_BIND: ":8081"
+    networks: [default, observability]
 
   meta:
     container_name: supabase-meta
@@ -489,6 +506,21 @@ services:
         "log_min_messages=fatal" # prevents Realtime polling queries from appearing in logs
       ]
 
+  # supabase/postgres ships no Prometheus exporter, so add one. Connects over
+  # the internal network and only exposes /metrics on :9187 to the
+  # observability network.
+  db-exporter:
+    container_name: supabase-db-exporter
+    image: quay.io/prometheuscommunity/postgres-exporter:v0.15.0
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATA_SOURCE_NAME: postgresql://supabase_admin:${POSTGRES_PASSWORD}@${POSTGRES_HOST}:${POSTGRES_PORT}/${POSTGRES_DB}?sslmode=disable
+      PG_EXPORTER_EXCLUDE_DATABASES: template0,template1
+    networks: [default, observability]
+
   vector:
     container_name: supabase-vector
     image: timberio/vector:0.28.1-alpine
@@ -518,6 +550,8 @@ services:
       ]
     security_opt:
       - "label=disable"
+    # Needs to reach Loki on the observability network to ship logs.
+    networks: [default, observability]
 
   # Update the DATABASE_URL if you are using an external Postgres database
   supavisor:
@@ -572,6 +606,22 @@ services:
         "-c",
         "/app/bin/migrate && /app/bin/supavisor eval \"$$(cat /etc/pooler/pooler.exs)\" && /app/bin/server"
       ]
+    # /metrics on :4000, gated by a JWT signed with METRICS_JWT_SECRET above.
+    networks: [default, observability]
 
 volumes:
   db-config:
+
+networks:
+  # Internal traffic between Supabase services.
+  default:
+
+  # Shared with an existing LGTM stack so Prometheus can scrape and Vector can
+  # push to Loki without publishing any port to the host. Create it once, on
+  # whichever side comes up first:
+  #   docker network create observability
+  #
+  # Only services that expose metrics or ship logs are attached.
+  observability:
+    name: ${OBSERVABILITY_NETWORK:-observability}
+    external: true
